@@ -17,7 +17,6 @@ class StringRefTest {
 public:
   StringRefTest() = default;
   ~StringRefTest() = default;
-  void Construct() {}
   bool CheckEqualOfFirstAndLast(StringRef in) {
     if (in.empty())
       return false;
