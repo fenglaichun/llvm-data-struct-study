@@ -1,0 +1,116 @@
+#The aim of this file is to explain the implement algorithm of densemap.
+## Step One: introduce the basical hash algorithm.
+template<KeyT, ValueT, KeyInfoT = DenseMapInfo<KeyT>, 
+         typename BucketT = llvm::detail::DenseMapPair<KeyT, VakyeT>>
+class DenseMap : DenseMapBase<DenseMap<>, xxxx> {
+
+BucketT *Buckets; // record the start address of the hash table.
+unsigned NumEntries; // the number of elements in the DenseMap. the size of DenseMap using this value.
+unsigned NumTombstones; // set the deleting element as Tombstone value when we delete one element in DenseMap.
+unsigned NumBuckets; // allocate the total numbers of Buckets.
+
+};
+
+
+DataStruct One:
+DenseMapInfo aims to provide the basical function to used in the DenseMapBase.
+DenseMapInfo<T> {
+ //static inline T getEmptyKey();
+ //static inline T getTombstoneKey();
+ //static unsigned getHashValue(const T &Val);
+ //static bool isEqual(const T &LHS, const T &RHS);
+}
+The llvm supports the following type of DenseMapInfo, and the user needs to extend it if he needs
+to use DenseMap for their own type. 
+1. all kinds of pointer
+2. char, unsigned char, unsigned short, unsigned, unsigned long, unsigned long long, short, int, long, long long
+3. std::pair<T, U> , T and U should be one of the types that supports DenseMapInfo.
+4. the tuples whose members have info.
+5. StringRef
+6. ArrayRef
+7. llvm::hash_code
+8. APInt
+
+For example: The solution to support DenseMapInfo<T *>
+Rule: the value of pointer can not be the same as the empty key and tombstone key, 
+template<typename T>
+struct DenseMapInfo<T*> {
+  // The following should hold, but it would require T to be complete:
+  // static_assert(alignof(T) <= (1 << Log2MaxAlign),
+  //               "DenseMap does not support pointer keys requiring more than "
+  //               "Log2MaxAlign bits of alignment");
+ 
+Question:  The reason why we need to set this max alignment value.???
+
+  static constexpr uintptr_t Log2MaxAlign = 12;
+
+  static inline T* getEmptyKey() {
+    uintptr_t Val = static_cast<uintptr_t>(-1);
+    Val <<= Log2MaxAlign;
+    return reinterpret_cast<T*>(Val);
+  }
+
+  static inline T* getTombstoneKey() {
+    uintptr_t Val = static_cast<uintptr_t>(-2);
+    Val <<= Log2MaxAlign;
+    return reinterpret_cast<T*>(Val);
+  }
+
+  static unsigned getHashValue(const T *PtrVal) {
+    return (unsigned((uintptr_t)PtrVal) >> 4) ^
+           (unsigned((uintptr_t)PtrVal) >> 9);
+  }
+
+  static bool isEqual(const T *LHS, const T *RHS) { return LHS == RHS; }
+};
+
+DataStruct Two:
+// The bucket type can be expressed by DenseMapPair;
+template<typename KeyT, typename ValueT>
+struct DenseMapPair : public std::pair<KeyT, ValueT> {};
+getFirst/getSecond return key/value
+
+DataStruct Three: DenseMapIterator
+using value_type = 
+   typename std::conditional<IsConst, const Bucket, Bucket>::type;
+   
+pointer is the pointer of buckets.
+the pointer will walk past the empty and tombstone bucket.
+
+void AdvancePastEmptyBuckets() {
+    assert(Ptr <= End);
+    const KeyT Empty = KeyInfoT::getEmptyKey();
+    const KeyT Tombstone = KeyInfoT::getTombstoneKey();
+// pay attention to this.
+    while (Ptr != End && (KeyInfoT::isEqual(Ptr->getFirst(), Empty) ||
+                          KeyInfoT::isEqual(Ptr->getFirst(), Tombstone)))
+      ++Ptr;
+  }
+
+DataStruct Three: DenseMapBase that implements the hash logic
+Compute the required number of buckets:
+/// Returns the next power of two (in 64-bits) that is strictly greater than A.
+/// Returns zero on overflow.
+inline uint64_t NextPowerOf2(uint64_t A) {
+  A |= (A >> 1);
+  A |= (A >> 2);
+  A |= (A >> 4);
+  A |= (A >> 8);
+  A |= (A >> 16);
+  A |= (A >> 32);
+  return A + 1;
+}
+the alorithm is that 
+Step one: A |= (A >> 1) , at lease the second highest bit will be one so that
+we have two one in the first two highest bit.
+Step two: A |= (A>>2) , the first four highest bit will be one.
+Step three: A |= (A>>4), the first eight highest bit will be one.
+and so on, so there can be at most 64 bit one in the result. returns zero when overflow.
+
+This function allocate AtLeast number of buckets for DenseMap and it will call
+the grow function from derived class.
+
+void grow(unsigned AtLeast) {
+    static_cast<DerivedT *>(this)->grow(AtLeast);
+}
+
