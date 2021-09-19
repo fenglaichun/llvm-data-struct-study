@@ -113,4 +113,23 @@ the grow function from derived class.
 void grow(unsigned AtLeast) {
     static_cast<DerivedT *>(this)->grow(AtLeast);
 }
+The grow function:
+Step1: allocate new size of buffer(has an algorithm)
+Step2: init all the bucket with EmtpyKey(init with placement new operator).
+       init number of entries and number of tombstones as zero.
+Step3: move the entries into the new buckets from old buckets.
+       it doesn't copy the original bucket directly or it will copy tombstones too,
+       the copying algorithm is that 1) traverse all the entries in the old bucket, 
+       2) call LookupBucketFor function to find the avaliable position in the new bucket to
+       insert the entry.
+
+the Explanation of LookupBucketFor
+ /// LookupBucketFor - Lookup the appropriate bucket for Val, returning it in
+ /// FoundBucket.  If the bucket contains the key and a value, this returns
+ /// true, otherwise it returns a bucket with an empty marker or tombstone and
+ /// returns false. 
+ standard quadratic probing algorithm.
+ ProbeAmt = 0;
+ BucketNo = getHashValue(key)  & (NumBuckets - 1) + ProbeAmt++; 
+ if the find the key in the bucket then return this bucket pointer and return true;
 
